@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flask To-Do App</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f6f8;
+            padding: 40px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 0 10px #ccc;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input, select, button {
+            padding: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+        }
+
+        .task {
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            background-color: #f1f1f1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .done {
+            text-decoration: line-through;
+            color: gray;
+        }
+
+        .High {
+            border-left: 6px solid red;
+        }
+
+        .Medium {
+            border-left: 6px solid orange;
+        }
+
+        .Low {
+            border-left: 6px solid green;
+        }
+
+        a {
+            margin-left: 8px;
+            text-decoration: none;
+        }
+
+        .actions {
+            white-space: nowrap;
+        }
+
+        .clear {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <h1>My To-Do App</h1>
+
+    <form method="POST">
+        <input type="text" name="task" placeholder="Enter task" required>
+
+        <select name="priority">
+            <option value="High">High</option>
+            <option value="Medium" selected>Medium</option>
+            <option value="Low">Low</option>
+        </select>
+
+        <input type="date" name="due_date">
+
+        <button type="submit">Add</button>
+    </form>
+
+    {% if tasks %}
+        {% for task in tasks %}
+            <div class="task {{ task.priority }}">
+                <div>
+                    {% if task.done %}
+                        <span class="done">{{ task.name }}</span>
+                    {% else %}
+                        <span>{{ task.name }}</span>
+                    {% endif %}
+
+                    <br>
+                    <small>
+                        Priority: {{ task.priority }}
+                        {% if task.due_date %}
+                            | Due: {{ task.due_date }}
+                        {% endif %}
+                    </small>
+                </div>
+
+                <div class="actions">
+                    <a href="/toggle/{{ loop.index0 }}">Toggle</a>
+                    <a href="/delete/{{ loop.index0 }}">Delete</a>
+                </div>
+            </div>
+        {% endfor %}
+
+        <a class="clear" href="/clear">Clear Completed Tasks</a>
+    {% else %}
+        <p style="text-align:center;">No tasks yet.</p>
+    {% endif %}
+</div>
+
+</body>
+</html>

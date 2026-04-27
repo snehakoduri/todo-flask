@@ -1,0 +1,26 @@
+[
+    {
+        "name": "take avyaan to taekwandoo",
+        "done": false,
+        "priority": "High",
+        "due_date": "2026-04-27"
+    },
+    {
+        "name": "meet hello india manager",
+        "done": false,
+        "priority": "Medium",
+        "due_date": "2026-04-27"
+    },
+    {
+        "name": "eat lunch",
+        "done": false,
+        "priority": "High",
+        "due_date": "2026-04-27"
+    },
+    {
+        "name": "go to a movie",
+        "done": false,
+        "priority": "Low",
+        "due_date": "2026-05-01"
+    }
+]
