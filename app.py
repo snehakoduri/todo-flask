@@ -1,43 +1,47 @@
 from flask import Flask, render_template, request, redirect, session
-import sqlite3
+import os
+import psycopg2
+import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key"
 
-DB_NAME = "tasks.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=psycopg2.extras.RealDictCursor
+    )
 
 
 def create_tables():
     conn = get_db_connection()
+    cur = conn.cursor()
 
-    conn.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL
         )
     """)
 
-    conn.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
             name TEXT NOT NULL,
-            done INTEGER NOT NULL DEFAULT 0,
+            done INTEGER DEFAULT 0,
             priority TEXT,
-            due_date TEXT,
-            FOREIGN KEY (user_id) REFERENCES users (id)
+            due_date TEXT
         )
     """)
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
@@ -53,15 +57,20 @@ def signup():
         hashed_password = generate_password_hash(password)
 
         conn = get_db_connection()
+        cur = conn.cursor()
+
         try:
-            conn.execute(
-                "INSERT INTO users (username, password) VALUES (?, ?)",
+            cur.execute(
+                "INSERT INTO users (username, password) VALUES (%s, %s)",
                 (username, hashed_password)
             )
             conn.commit()
+            cur.close()
             conn.close()
             return redirect("/login")
-        except sqlite3.IntegrityError:
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            cur.close()
             conn.close()
             return "Username already exists."
 
@@ -75,10 +84,15 @@ def login():
         password = request.form.get("password")
 
         conn = get_db_connection()
-        user = conn.execute(
-            "SELECT * FROM users WHERE username = ?",
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT * FROM users WHERE username = %s",
             (username,)
-        ).fetchone()
+        )
+        user = cur.fetchone()
+
+        cur.close()
         conn.close()
 
         if user and check_password_hash(user["password"], password):
@@ -103,6 +117,7 @@ def home():
         return redirect("/login")
 
     conn = get_db_connection()
+    cur = conn.cursor()
 
     if request.method == "POST":
         task_name = request.form.get("task")
@@ -110,15 +125,16 @@ def home():
         due_date = request.form.get("due_date")
 
         if task_name:
-            conn.execute(
+            cur.execute(
                 """
                 INSERT INTO tasks (user_id, name, done, priority, due_date)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
                 (session["user_id"], task_name, 0, priority, due_date)
             )
             conn.commit()
 
+        cur.close()
         conn.close()
         return redirect("/")
 
@@ -126,11 +142,11 @@ def home():
     status = request.args.get("status", "all")
     sort = request.args.get("sort", "newest")
 
-    query = "SELECT * FROM tasks WHERE user_id = ?"
+    query = "SELECT * FROM tasks WHERE user_id = %s"
     params = [session["user_id"]]
 
     if search:
-        query += " AND name LIKE ?"
+        query += " AND name ILIKE %s"
         params.append(f"%{search}%")
 
     if status == "pending":
@@ -151,11 +167,14 @@ def home():
         END
         """
     elif sort == "due_date":
-        query += " ORDER BY due_date ASC"
+        query += " ORDER BY due_date ASC NULLS LAST"
     else:
         query += " ORDER BY id DESC"
 
-    tasks = conn.execute(query, params).fetchall()
+    cur.execute(query, params)
+    tasks = cur.fetchall()
+
+    cur.close()
     conn.close()
 
     return render_template(
@@ -174,20 +193,23 @@ def toggle(task_id):
         return redirect("/login")
 
     conn = get_db_connection()
+    cur = conn.cursor()
 
-    task = conn.execute(
-        "SELECT done FROM tasks WHERE id = ? AND user_id = ?",
+    cur.execute(
+        "SELECT done FROM tasks WHERE id = %s AND user_id = %s",
         (task_id, session["user_id"])
-    ).fetchone()
+    )
+    task = cur.fetchone()
 
     if task:
         new_status = 0 if task["done"] == 1 else 1
-        conn.execute(
-            "UPDATE tasks SET done = ? WHERE id = ? AND user_id = ?",
+        cur.execute(
+            "UPDATE tasks SET done = %s WHERE id = %s AND user_id = %s",
             (new_status, task_id, session["user_id"])
         )
         conn.commit()
 
+    cur.close()
     conn.close()
     return redirect("/")
 
@@ -198,13 +220,16 @@ def edit(task_id):
         return redirect("/login")
 
     conn = get_db_connection()
+    cur = conn.cursor()
 
-    task = conn.execute(
-        "SELECT * FROM tasks WHERE id = ? AND user_id = ?",
+    cur.execute(
+        "SELECT * FROM tasks WHERE id = %s AND user_id = %s",
         (task_id, session["user_id"])
-    ).fetchone()
+    )
+    task = cur.fetchone()
 
     if not task:
+        cur.close()
         conn.close()
         return redirect("/")
 
@@ -213,18 +238,21 @@ def edit(task_id):
         priority = request.form.get("priority")
         due_date = request.form.get("due_date")
 
-        conn.execute(
+        cur.execute(
             """
             UPDATE tasks
-            SET name = ?, priority = ?, due_date = ?
-            WHERE id = ? AND user_id = ?
+            SET name = %s, priority = %s, due_date = %s
+            WHERE id = %s AND user_id = %s
             """,
             (name, priority, due_date, task_id, session["user_id"])
         )
         conn.commit()
+
+        cur.close()
         conn.close()
         return redirect("/")
 
+    cur.close()
     conn.close()
     return render_template("edit.html", task=task)
 
@@ -235,11 +263,15 @@ def delete(task_id):
         return redirect("/login")
 
     conn = get_db_connection()
-    conn.execute(
-        "DELETE FROM tasks WHERE id = ? AND user_id = ?",
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM tasks WHERE id = %s AND user_id = %s",
         (task_id, session["user_id"])
     )
+
     conn.commit()
+    cur.close()
     conn.close()
 
     return redirect("/")
@@ -251,11 +283,15 @@ def clear_completed():
         return redirect("/login")
 
     conn = get_db_connection()
-    conn.execute(
-        "DELETE FROM tasks WHERE done = 1 AND user_id = ?",
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM tasks WHERE done = 1 AND user_id = %s",
         (session["user_id"],)
     )
+
     conn.commit()
+    cur.close()
     conn.close()
 
     return redirect("/")
